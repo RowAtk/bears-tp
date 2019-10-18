@@ -23,18 +23,35 @@ class Sender(BasicSender):
     # Main sending loop.
     def start(self):
         # add things here
-        packet_msgs = Utils.splitFile(self.infile, 1450)
-        # BUtil.printspace(packet_msgs)
-        # print len(packet_msgs)
+
+        packet_msgs = Utils.splitFile(self.infile, 1450) # split message into the bytes to be sent to receiver
+        len_msg = len(packet_msgs) # length of split message to be sent
+       
         #
         # initial syn
-        spacket = self.make_packet('syn',0,'')
+        seq_num = 0  # initial sequence number
+        spacket = self.make_packet('syn',seq_num,'')
         self.send(spacket)
         while(True):    # While True - for now
             rpacket = self.receive(500)
             if rpacket:
-                print rpacket
-                # self.send(spacket)
+                print rpacket # Received packet indicating the next packet sequence to come next
+                print "\n\n"
+                rmsg_type, rseqno, rdata, rchecksum = self.split_packet(rpacket) # gets the sequence number from the received packet to check for packet loss
+                print rmsg_type, rseqno, rdata, rchecksum
+                print "\n\n"
+                
+                if rseqno <= seq_num:
+                    spacket = self.make_packet('dat', rseqno, packet_msgs[rseqno-1])
+                else:
+                    seq_num += 1
+                    if seq_num < len_msg:
+                        spacket = self.make_packet('dat', seq_num, packet_msgs[seq_num-1])
+                    else:
+                        spacket = self.make_packet('fin', seq_num, packet_msgs[seq_num-1])
+                print spacket
+                print "\n\n"
+                self.send(spacket)
         
 '''
 This will be run if you run this script from the command line. You should not
