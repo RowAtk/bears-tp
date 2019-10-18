@@ -3,6 +3,13 @@ import getopt
 
 import Checksum
 from BasicSender import BasicSender
+import Utils
+from pprint import pprint
+
+"""
+spacket - packet to be sent
+rpacket - packet received
+"""
 
 '''
 This is a skeleton sender class. Create a fantastic transport protocol here.
@@ -15,8 +22,19 @@ class Sender(BasicSender):
 
     # Main sending loop.
     def start(self):
-      # add things here
-      pass
+        # add things here
+        packet_msgs = Utils.splitFile(self.infile, 1450)
+        # BUtil.printspace(packet_msgs)
+        # print len(packet_msgs)
+        #
+        # initial syn
+        spacket = self.make_packet('syn',0,'')
+        self.send(spacket)
+        while(True):    # While True - for now
+            rpacket = self.receive(500)
+            if rpacket:
+                print rpacket
+                # self.send(spacket)
         
 '''
 This will be run if you run this script from the command line. You should not
