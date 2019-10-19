@@ -23,18 +23,29 @@ class Sender(BasicSender):
     # Main sending loop.
     def start(self):
         # add things here
+        seq = 0
         packet_msgs = Utils.splitFile(self.infile, 1450)
+        max_seq = len(packet_msgs)
+        print max_seq
         # BUtil.printspace(packet_msgs)
         # print len(packet_msgs)
         #
         # initial syn
-        spacket = self.make_packet('syn',0,'')
+        spacket = self.make_packet('syn',seq,'')
         self.send(spacket)
-        while(True):    # While True - for now
+        rpacket = self.receive(500)
+        while(rpacket):    # While True - for now
+            print rpacket
+            seq += 1
+            if seq < max_seq:
+                spacket = self.make_packet('dat',seq,packet_msgs[seq-1])
+            elif seq == max_seq:
+                spacket = self.make_packet('fin',seq,packet_msgs[seq-1])
+            else:
+                break
+            self.send(spacket)
             rpacket = self.receive(500)
-            if rpacket:
-                print rpacket
-                # self.send(spacket)
+            
         
 '''
 This will be run if you run this script from the command line. You should not
