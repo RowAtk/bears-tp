@@ -81,7 +81,9 @@ class Sender(BasicSender):
                 self.see_packet(packets[seq])
             print "DONE SEND"
             rpacket = self.receive(500)
-            ack = int(self.split_packet(rpacket)[1])
+            if Checksum.validate_checksum(rpacket):
+                ack = int(self.split_packet(rpacket)[1])
+
 
         print "SEQ: ", seq, "ACK: ", ack, "WINDOW END: ",window_end
 
