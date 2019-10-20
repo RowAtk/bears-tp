@@ -20,31 +20,71 @@ class Sender(BasicSender):
         self.sackMode = sackMode
         self.debug = debug
 
+    def make_data_packets(self,filename, packet_size, init_seq):
+        messages = Utils.splitFile(filename,packet_size)
+        packets = [len(messages)]
+        for i, message in enumerate(messages[:-1], start=init_seq):
+            packets.append(self.make_packet('dat',i,message))
+        packets.append(self.make_packet('fin',len(messages),messages[-1]))
+        return packets
+
+    def see_packet(self, packet, mode='s'):
+        msg_type, seqno, data, checksum = self.split_packet(packet)
+        try:
+            seqno = int(seqno)
+        except:
+            raise ValueError
+        if mode == 's':
+            print "packet: %s|%d|%s|%s" % (msg_type, seqno, data[:5], checksum)
+        else:
+            print "packet: %s|%d|%s|%s" % (msg_type, seqno, data, checksum)
+
+
     # Main sending loop.
     def start(self):
         # add things here
+        connected = False
+        window_size = 7
         seq = 0
-        packet_msgs = Utils.splitFile(self.infile, 1450)
-        max_seq = len(packet_msgs)
+        packets = self.make_data_packets(self.infile,1450,seq+1)
+        pprint(packets)
+        max_seq = packets[0]
         print max_seq
-        # BUtil.printspace(packet_msgs)
-        # print len(packet_msgs)
-        #
+        
         # initial syn
+        rpacket = None
         spacket = self.make_packet('syn',seq,'')
-        self.send(spacket)
-        rpacket = self.receive(500)
-        while(rpacket):    # While True - for now
-            print rpacket
-            seq += 1
-            if seq < max_seq:
-                spacket = self.make_packet('dat',seq,packet_msgs[seq-1])
-            elif seq == max_seq:
-                spacket = self.make_packet('fin',seq,packet_msgs[seq-1])
-            else:
-                break
+        while(not rpacket):
             self.send(spacket)
             rpacket = self.receive(500)
+
+        connected = True
+        # print self.split_packet(rpacket)
+        ack = int(self.split_packet(rpacket)[1])
+        window_end = (ack + window_size) - 1
+        # print ack
+        while(connected and ack <= max_seq):    # While connection established and all packets received
+            print "SEQ: ", seq, "ACK: ", ack, "WINDOW END: ",window_end
+            print rpacket
+            # break
+            if ack > window_end:
+                window_end += window_size
+
+            if ack <= seq:
+                self.send(packets[ack])
+                print "\n"
+                self.see_packet(packets[ack])
+            elif seq <= window_end:
+                seq += 1
+                self.send(packets[seq])
+                print "\n"
+                self.see_packet(packets[seq])
+            print "DONE SEND"
+            rpacket = self.receive(500)
+            ack = int(self.split_packet(rpacket)[1])
+
+        print "SEQ: ", seq, "ACK: ", ack, "WINDOW END: ",window_end
+
             
         
 '''
