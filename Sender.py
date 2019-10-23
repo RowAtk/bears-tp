@@ -47,7 +47,7 @@ class Sender(BasicSender):
         window_size = 7
         seq = 0
         packets = self.make_data_packets(self.infile,1450,seq+1)
-        pprint(packets)
+        # pprint(packets)
         max_seq = packets[0]
         print max_seq
         
@@ -62,7 +62,7 @@ class Sender(BasicSender):
         # print self.split_packet(rpacket)
         ack = int(self.split_packet(rpacket)[1])
         window_end = (ack + window_size) - 1
-        # print ack
+        print ack
         while(connected and ack <= max_seq):    # While connection established and all packets received
             print "SEQ: ", seq, "ACK: ", ack, "WINDOW END: ",window_end
             print rpacket
@@ -73,12 +73,12 @@ class Sender(BasicSender):
             if ack <= seq:
                 self.send(packets[ack])
                 print "\n"
-                self.see_packet(packets[ack])
+                # self.see_packet(packets[ack])
             elif seq <= window_end:
                 seq += 1
                 self.send(packets[seq])
                 print "\n"
-                self.see_packet(packets[seq])
+                # self.see_packet(packets[seq])
             print "DONE SEND"
             rpacket = self.receive(500)
             if Checksum.validate_checksum(rpacket):
