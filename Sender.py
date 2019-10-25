@@ -43,7 +43,7 @@ class Sender(BasicSender):
     # Main sending loop.
     def start(self):
         # add things here
-        timeout = 0.5
+        timeout = 0.50
         connected = False
         window_size = 7
         seq = 0
