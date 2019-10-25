@@ -43,6 +43,7 @@ class Sender(BasicSender):
     # Main sending loop.
     def start(self):
         # add things here
+        timeout = 0.50
         connected = False
         window_size = 7
         seq = 0
@@ -56,7 +57,8 @@ class Sender(BasicSender):
         spacket = self.make_packet('syn',seq,'')
         while(not rpacket):
             self.send(spacket)
-            rpacket = self.receive(500)
+            print("SEND SYN")
+            rpacket = self.receive(timeout)
 
         connected = True
         # print self.split_packet(rpacket)
@@ -72,15 +74,23 @@ class Sender(BasicSender):
 
             if ack <= seq:
                 self.send(packets[ack])
+<<<<<<< HEAD
                 print "\n"
+=======
+                # print "\n"
+>>>>>>> gobackN
                 # self.see_packet(packets[ack])
             elif seq <= window_end:
                 seq += 1
                 self.send(packets[seq])
+<<<<<<< HEAD
                 print "\n"
+=======
+                # print "\n"
+>>>>>>> gobackN
                 # self.see_packet(packets[seq])
             print "DONE SEND"
-            rpacket = self.receive(500)
+            rpacket = self.receive(timeout)
             if Checksum.validate_checksum(rpacket):
                 ack = int(self.split_packet(rpacket)[1])
 
