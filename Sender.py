@@ -4,7 +4,7 @@ import getopt
 import Checksum
 from BasicSender import BasicSender
 import Utils
-from pprint import pprint
+import time
 
 """
 spacket - packet to be sent
@@ -15,10 +15,24 @@ rpacket - packet received
 This is a skeleton sender class. Create a fantastic transport protocol here.
 '''
 class Sender(BasicSender):
+
+    # constants
+    TIMEOUT = 0.05
+    WINDOW_SIZE = 7
+    INIT_SEQ = 0
+    CONNECTED = False
+    PACKET_SIZE = 1450
+    # 
+    packets = dict()
+    fin = -1
+    data = [None]*2 # current data and lookahead data
+
+
     def __init__(self, dest, port, filename, debug=False, sackMode=False):
         super(Sender, self).__init__(dest, port, filename, debug)
         self.sackMode = sackMode
         self.debug = debug
+        self.data[1] = self.infile.read(self.PACKET_SIZE)
 
     def make_data_packets(self,filename, packet_size, init_seq):
         messages = Utils.splitFile(filename,packet_size)
@@ -27,6 +41,27 @@ class Sender(BasicSender):
             packets.append(self.make_packet('dat',i,message))
         packets.append(self.make_packet('fin',len(messages),messages[-1]))
         return packets
+
+    def make_window_packets(self):
+        self.packets = [None] * WINDOW_SIZE
+        seq = 0
+        data = self.infile.read(self.PACKET_SIZE)
+        ndata = self.infile.read(self.PACKET_SIZE)
+        while data and seq < self.WINDOW_SIZE:
+            if ndata:
+                self.packets[seq] = self.make_packet("dat",seq,data)
+            else:
+                self.packets[seq] = self.make_packet("fin", seq, data)
+            data = ndata
+            ndata =  self.infile.read(self.PACKET_SIZE)
+            seq += 1
+    
+    def getData(self):
+        self.data[0] = self.data[1]
+        self.data[1] = self.infile.read(self.PACKET_SIZE)
+        if self.data[1]:
+            return 'dat', self.data[0]
+        return 'fin', self.data[0]
 
     def see_packet(self, packet, mode='s'):
         msg_type, seqno, data, checksum = self.split_packet(packet)
@@ -39,57 +74,75 @@ class Sender(BasicSender):
         else:
             print "packet: %s|%d|%s|%s" % (msg_type, seqno, data, checksum)
 
+    def validate(self, packet):
+        return Checksum.validate_checksum(packet)        
+
+    def timeouts(self):
+        now = time.time()
+        for seq, packet in self.packets.items():
+            if now - packet["time"] > self.TIMEOUT:
+                return seq
+        
 
     # Main sending loop.
     def start(self):
-        # add things here
-        timeout = 0.50
-        connected = False
-        window_size = 7
-        seq = 0
-        packets = self.make_data_packets(self.infile,1450,seq+1)
-        # pprint(packets)
-        max_seq = packets[0]
-        print max_seq
+        """ 
+        main sending function
+        spacket - packet to be sent
+        rpacket - packet received 
+        tpacket - timed out packet
+        seq - current sequence number
+        ack - most recent ack number received
+        window_start - seq number of first expected packet in window
+        fin - sequence # of the final packet
+        """
         
-        # initial syn
+        # establish connection
         rpacket = None
-        spacket = self.make_packet('syn',seq,'')
-        while(not rpacket):
+        spacket = self.make_packet('syn', self.INIT_SEQ, '')
+        while(not self.CONNECTED):
             self.send(spacket)
-            print("SEND SYN")
-            rpacket = self.receive(timeout)
+            print "SENT SYN" 
+            rpacket = self.receive(self.TIMEOUT)
+            if rpacket:
+                print rpacket
+                if self.validate(rpacket):
+                    self.CONNECTED = True
 
-        connected = True
-        # print self.split_packet(rpacket)
-        ack = int(self.split_packet(rpacket)[1])
-        window_end = (ack + window_size) - 1
-        # print ack
-        while(connected and ack <= max_seq):    # While connection established and all packets received
-            print "SEQ: ", seq, "ACK: ", ack, "WINDOW END: ",window_end
-            print rpacket
-            # break
-            if ack > window_end:
-                window_end += window_size
-
-            if ack <= seq:
-                self.send(packets[ack])
-                # print "\n"
-                # self.see_packet(packets[ack])
-            elif seq <= window_end:
+        # send data
+        seq = self.INIT_SEQ + 1
+        window_start = seq
+        while self.CONNECTED:
+            # SENDING PACKETS
+            if seq - window_start < self.WINDOW_SIZE or True:  # check if window is full
+                msg_type, data = self.getData()
+                if msg_type == "fin":   # is this packet the final packet?
+                    self.fin = seq
+                spacket = self.make_packet(msg_type, seq, data)
+                self.packets[seq] = {"packet": spacket, "time": time.time()} # store packet for retransmission
+                self.send(spacket)
                 seq += 1
-                self.send(packets[seq])
-                # print "\n"
-                # self.see_packet(packets[seq])
-            print "DONE SEND"
-            rpacket = self.receive(timeout)
-            if Checksum.validate_checksum(rpacket):
+
+
+            # TIMEOUT HANDLING
+            tpacket = self.timeouts()
+            if tpacket:
+                # retransmit files from tpacket to end of window
+                pass
+
+            # RECEIVED PACKET HANDLING
+            rpacket = self.receive()
+            if self.validate(rpacket):
+                print rpacket
                 ack = int(self.split_packet(rpacket)[1])
+                print(ack)
+                del self.packets[ack-1]
+                window_start = ack
 
+            # has fin packet been acknowledged? - Connection closing condition
+            if self.fin != -1 and ack > self.fin:
+                self.CONNECTED = False
 
-        print "SEQ: ", seq, "ACK: ", ack, "WINDOW END: ",window_end
-
-            
         
 '''
 This will be run if you run this script from the command line. You should not
