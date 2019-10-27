@@ -17,12 +17,14 @@ This is a skeleton sender class. Create a fantastic transport protocol here.
 class Sender(BasicSender):
 
     # constants
-    TIMEOUT = 0.05
+    TIMEOUT = 0.5
     WINDOW_SIZE = 7
     INIT_SEQ = 0
     CONNECTED = False
     PACKET_SIZE = 1450
+    RTT = 0.005 # set when connection established and kept constant
     # 
+    
     packets = dict()
     fin = -1
     data = [None]*2 # current data and lookahead data
@@ -74,6 +76,12 @@ class Sender(BasicSender):
         else:
             print "packet: %s|%d|%s|%s" % (msg_type, seqno, data, checksum)
 
+    def stored_packets(self):
+        print "\nPACKET STORE"
+        for packet in self.packets.values():
+            self.see_packet(packet["packet"])
+        print "\n"
+
     def validate(self, packet):
         return Checksum.validate_checksum(packet)        
 
@@ -81,7 +89,9 @@ class Sender(BasicSender):
         now = time.time()
         for seq, packet in self.packets.items():
             if now - packet["time"] > self.TIMEOUT:
+                print("PACKET TIMED OUT")
                 return seq
+        return None
         
 
     # Main sending loop.
@@ -90,16 +100,16 @@ class Sender(BasicSender):
         main sending function
         spacket - packet to be sent
         rpacket - packet received 
-        tpacket - timed out packet
         seq - current sequence number
+        tseq - sequence number of timed out packet
         ack - most recent ack number received
         window_start - seq number of first expected packet in window
         fin - sequence # of the final packet
         """
         
         # establish connection
-        rpacket = None
         spacket = self.make_packet('syn', self.INIT_SEQ, '')
+        # self.packets[self.INIT_SEQ] = {"packet": spacket, "time": time.time()}
         while(not self.CONNECTED):
             self.send(spacket)
             print "SENT SYN" 
@@ -110,37 +120,54 @@ class Sender(BasicSender):
                     self.CONNECTED = True
 
         # send data
-        seq = self.INIT_SEQ + 1
+        ack = int(self.split_packet(rpacket)[1])
+        seq = ack
         window_start = seq
         while self.CONNECTED:
             # SENDING PACKETS
-            if seq - window_start < self.WINDOW_SIZE or True:  # check if window is full
+            print "\n\n"
+            print "seq:",seq,"window start:",window_start, "\nWORKING.."
+            if seq - window_start < self.WINDOW_SIZE:  # check if window is full
+                print("Window space available")
                 msg_type, data = self.getData()
-                if msg_type == "fin":   # is this packet the final packet?
-                    self.fin = seq
-                spacket = self.make_packet(msg_type, seq, data)
-                self.packets[seq] = {"packet": spacket, "time": time.time()} # store packet for retransmission
-                self.send(spacket)
-                seq += 1
-
+                if data:
+                    if msg_type == 'fin':   # is this packet the final packet?
+                        print("FINAL PACKET")
+                        self.fin = seq
+                    spacket = self.make_packet(msg_type, seq, data)
+                    self.packets[seq] = {"packet": spacket, "time": time.time()} # store packet for retransmission
+                    self.send(spacket)
+                    print("packet sent")
+                    self.see_packet(spacket)
+                    seq += 1
 
             # TIMEOUT HANDLING
-            tpacket = self.timeouts()
-            if tpacket:
-                # retransmit files from tpacket to end of window
+            tseq = self.timeouts()
+            print(tseq)
+            if tseq:
+                # retransmit files from tpacket to current packet
+                print("TIMEOUT")
+                for i in range(tseq, seq):
+                    spacket = self.packets[i]["packet"]
+                    self.send(spacket)
+                    print "sent packet"
+                    self.see_packet(spacket)
                 pass
 
             # RECEIVED PACKET HANDLING
-            rpacket = self.receive()
+            rpacket = self.receive(0)
+            print rpacket
             if self.validate(rpacket):
-                print rpacket
                 ack = int(self.split_packet(rpacket)[1])
                 print(ack)
-                del self.packets[ack-1]
-                window_start = ack
+                if ack > window_start and ack < seq:
+                    while window_start < ack:
+                        del self.packets[window_start]
+                        window_start +=1
 
             # has fin packet been acknowledged? - Connection closing condition
             if self.fin != -1 and ack > self.fin:
+                print("CLOSE CONNECTION")
                 self.CONNECTED = False
 
         
