@@ -34,30 +34,8 @@ class Sender(BasicSender):
         self.rpacket = None         # packet last receieved - may be None if no packets in receive buffer
         self.packets = dict()       # collection of stored unacknowledged packets
         self.fin = -1               # sequence number of final packet sent
+        self.ack_count = [None, 0]  # counter for duplicate ack numbers received
 
-
-    def make_data_packets(self,filename, packet_size, init_seq):
-        messages = Utils.splitFile(filename,packet_size)
-        packets = [len(messages)]
-        for i, message in enumerate(messages[:-1], start=init_seq):
-            packets.append(self.make_packet('dat',i,message))
-        packets.append(self.make_packet('fin',len(messages),messages[-1]))
-        return packets
-
-    def make_window_packets(self):
-        self.packets = [None] * self.WINDOW_SIZE
-        seq = 0
-        data = self.infile.read(self.PACKET_SIZE)
-        ndata = self.infile.read(self.PACKET_SIZE)
-        while data and seq < self.WINDOW_SIZE:
-            if ndata:
-                self.packets[seq] = self.make_packet("dat",seq,data)
-            else:
-                self.packets[seq] = self.make_packet("fin", seq, data)
-            data = ndata
-            ndata =  self.infile.read(self.PACKET_SIZE)
-            seq += 1
-    
     def getData(self):
         self.data[0] = self.data[1]
         self.data[1] = self.infile.read(self.PACKET_SIZE)
@@ -121,103 +99,37 @@ class Sender(BasicSender):
                 self.send(self.spacket)
                 self.seq += 1
 
-    def retransmit(self, start):
+    def gbn_retransmit(self, start):
         print "TIMEOUT"
         for i in range(start, self.seq):
-            self.spacket = self.packets[i]["packets"]
+            self.spacket = self.packets[i]["packet"]
             self.send(self.spacket)
     
+    def handle_duplicates(self):
+        if self.ack != self.ack_count[0]:
+            self.ack_count[0] = self.ack
+            self.ack_count[1] = 1
+        else:
+            self.ack_count[1] += 1
+            if self.ack_count[1] >= 4:
+                print("FAST RETRANSMISSION")
+                self.send(self.packets[self.ack])
+
     def receive_packet(self):
-        try:
+        try:    
             self.rpacket = self.receive(0)
+            if self.validate(self.rpacket):
+                self.ack = int(self.split_packet(self.rpacket)[1])
+                self.handle_duplicates()    # handle any fast retransmission triggers
+
+                if self.ack > self.window_start and self.ack < self.seq:    # delete ack'd packets from storage
+                    while self.window_start < self.ack:
+                        del self.packets[self.window_start]
+                        self.window_start += 1
         except:
             self.rpacket = None
-        if self.validate(self.rpacket):
-            self.ack = int(self.split_packet(self.rpacket)[1])
-            if self.ack > self.window_start and self.ack < self.seq:
-                while self.window_start < self.ack:
-                    del self.packets[self.window_start]
-                    self.window_start += 1
-    
-    # Main sending loop - no modularization.
-    def start2(self):
-        """ 
-        main sending function
-        spacket - packet to be sent
-        rpacket - packet received 
-        seq - current sequence number
-        tseq - sequence number of timed out packet
-        ack - most recent ack number received
-        window_start - seq number of first expected packet in window
-        fin - sequence # of the final packet
-        """
+
         
-        # establish connection
-        spacket = self.make_packet('syn', self.INIT_SEQ, '')
-        # self.packets[self.INIT_SEQ] = {"packet": spacket, "time": time.time()}
-        while(not self.CONNECTED):
-            self.send(spacket)
-            print "SENT SYN" 
-            rpacket = self.receive(self.TIMEOUT)
-            if rpacket:
-                print rpacket
-                if self.validate(rpacket):
-                    self.CONNECTED = True
-
-        # send data
-        ack = int(self.split_packet(rpacket)[1])
-        seq = ack
-        window_start = seq
-        while self.CONNECTED:
-            # SENDING PACKETS
-            print "\n\n"
-            print "seq:",seq,"window start:",window_start, "\nWORKING.."
-            if seq - window_start < self.WINDOW_SIZE:  # check if window is full
-                print("Window space available")
-                msg_type, data = self.getData()
-                if data:
-                    if msg_type == 'fin':   # is this packet the final packet?
-                        print("FINAL PACKET")
-                        self.fin = seq
-                    spacket = self.make_packet(msg_type, seq, data)
-                    self.packets[seq] = {"packet": spacket, "time": time.time()} # store packet for retransmission
-                    self.send(spacket)
-                    print("packet sent")
-                    self.see_packet(spacket)
-                    seq += 1
-
-            # TIMEOUT HANDLING
-            tseq = self.timeouts()
-            print(tseq)
-            if tseq:
-                # retransmit files from tpacket to current packet
-                print("TIMEOUT")
-                for i in range(tseq, seq):
-                    spacket = self.packets[i]["packet"]
-                    self.send(spacket)
-                    print "sent packet"
-                    self.see_packet(spacket)
-                pass
-
-            # RECEIVED PACKET HANDLING
-            try:
-	            rpacket = self.receive(0)
-            except:
-            	rpacket = None
-            print rpacket
-            if self.validate(rpacket):
-                ack = int(self.split_packet(rpacket)[1])
-                print(ack)
-                if ack > window_start and ack < seq:
-                    while window_start < ack:
-                        del self.packets[window_start]
-                        window_start +=1
-
-            # has fin packet been acknowledged? - Connection closing condition
-            if self.fin != -1 and ack > self.fin:
-                print("CLOSE CONNECTION")
-                self.CONNECTED = False
-
     # Main sending loop.
     def start(self):
         """ main sending function """
@@ -234,7 +146,7 @@ class Sender(BasicSender):
             tseq = self.timeouts()
             if tseq:
                 # retransmit files from tpacket to current packet
-                self.retransmit(tseq)
+                self.gbn_retransmit(tseq)
 
             # RECEIVE #
             self.receive_packet()
