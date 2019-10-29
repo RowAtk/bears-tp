@@ -79,7 +79,8 @@ class Sender(BasicSender):
         ack_str = self.split_packet(self.rpacket)[1]
         if self.sackMode:
             sack_info = ack_str.split(";")
-            self.acklist = sack_info[1]
+            # print sack_info
+            self.acklist = list(map(int,sack_info[1]))
             return int(sack_info[0])
         return int(ack_str)
 
@@ -126,7 +127,10 @@ class Sender(BasicSender):
             self.ack_count[1] += 1
             if self.ack_count[1] >= 4:
                 print("FAST RETRANSMISSION")
-                self.send(self.packets[self.ack])
+                if self.sackMode:
+                    self.sack_retransmit()
+                else:
+                    self.send(self.packets[self.ack])
 
     def receive_packet(self):
         try:    
@@ -148,7 +152,7 @@ class Sender(BasicSender):
     def start(self):
         """ main sending function """
         self.connect()  # establish connection
-        self.ack = int(self.split_packet(self.rpacket)[1])
+        self.ack = self.get_ack()
         self.seq = self.ack
         self.window_start = self.seq
         while self.CONNECTED:
