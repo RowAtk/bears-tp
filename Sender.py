@@ -22,19 +22,19 @@ class Sender(BasicSender):
     INIT_SEQ = 0
     CONNECTED = False
     PACKET_SIZE = 1450
-    RTT = 0.005 # set when connection established and kept constant
-    # 
-    
-    packets = dict()
-    fin = -1
-    data = [None]*2 # current data and lookahead data
-
 
     def __init__(self, dest, port, filename, debug=False, sackMode=False):
         super(Sender, self).__init__(dest, port, filename, debug)
         self.sackMode = sackMode
         self.debug = debug
-        self.data[1] = self.infile.read(self.PACKET_SIZE)
+        self.data = [None, self.infile.read(self.PACKET_SIZE)]  # current data and lookahead data
+        self.seq = self.INIT_SEQ    # sequence number of next packet to be sent
+        self.ack = None             # ack number of most recently acknowledged packet
+        self.spacket = None         # packet to be sent
+        self.rpacket = None         # packet last receieved - may be None if no packets in receive buffer
+        self.packets = dict()       # collection of stored unacknowledged packets
+        self.fin = -1               # sequence number of final packet sent
+
 
     def make_data_packets(self,filename, packet_size, init_seq):
         messages = Utils.splitFile(filename,packet_size)
@@ -45,7 +45,7 @@ class Sender(BasicSender):
         return packets
 
     def make_window_packets(self):
-        self.packets = [None] * WINDOW_SIZE
+        self.packets = [None] * self.WINDOW_SIZE
         seq = 0
         data = self.infile.read(self.PACKET_SIZE)
         ndata = self.infile.read(self.PACKET_SIZE)
@@ -92,10 +92,55 @@ class Sender(BasicSender):
                 print("PACKET TIMED OUT")
                 return seq
         return None
-        
+    
+    def store_packet(self):
+        """ store packet for retransmission """
+        self.packets[self.seq] = {"packet": self.spacket, "time": time.time()}
 
-    # Main sending loop.
-    def start(self):
+    def connect(self):
+        """ connect to receiver """
+        self.spacket = self.make_packet('syn', self.INIT_SEQ, '')
+        while not self.CONNECTED:
+            self.send(self.spacket)
+            self.rpacket = self.receive(self.TIMEOUT)
+            if self.rpacket:
+                print self.rpacket
+                if self.validate(self.rpacket):
+                    self.CONNECTED = True
+        print "CONNECTED !!!!!!"
+
+    def send_data(self):
+        """ send packets to receiver """
+        if self.seq - self.window_start < self.WINDOW_SIZE:   # check if window is full
+            msg_type, data = self.getData()
+            if data:
+                if msg_type == 'fin':   # is this the final packet?
+                    self.fin = self.seq
+                self.spacket = self.make_packet(msg_type, self.seq, data)
+                self.store_packet()
+                self.send(self.spacket)
+                self.seq += 1
+
+    def retransmit(self, start):
+        print "TIMEOUT"
+        for i in range(start, self.seq):
+            self.spacket = self.packets[i]["packets"]
+            self.send(self.spacket)
+    
+    def receive_packet(self):
+        try:
+            self.rpacket = self.receive(0)
+        except:
+            self.rpacket = None
+        if self.validate(self.rpacket):
+            self.ack = int(self.split_packet(self.rpacket)[1])
+            if self.ack > self.window_start and self.ack < self.seq:
+                while self.window_start < self.ack:
+                    del self.packets[self.window_start]
+                    self.window_start += 1
+    
+    # Main sending loop - no modularization.
+    def start2(self):
         """ 
         main sending function
         spacket - packet to be sent
@@ -155,7 +200,10 @@ class Sender(BasicSender):
                 pass
 
             # RECEIVED PACKET HANDLING
-            rpacket = self.receive(0)
+            try:
+	            rpacket = self.receive(0)
+            except:
+            	rpacket = None
             print rpacket
             if self.validate(rpacket):
                 ack = int(self.split_packet(rpacket)[1])
@@ -170,6 +218,33 @@ class Sender(BasicSender):
                 print("CLOSE CONNECTION")
                 self.CONNECTED = False
 
+    # Main sending loop.
+    def start(self):
+        """ main sending function """
+    
+        self.connect()  # establish connection
+        self.ack = int(self.split_packet(self.rpacket)[1])
+        self.seq = self.ack
+        self.window_start = self.seq
+        while self.CONNECTED:
+            # SEND #
+            self.send_data()
+
+            # TIMEOUT #
+            tseq = self.timeouts()
+            if tseq:
+                # retransmit files from tpacket to current packet
+                self.retransmit(tseq)
+
+            # RECEIVE #
+            self.receive_packet()
+
+            # has fin packet been acknowledged? - Connection closing condition
+            if self.fin != -1 and self.ack > self.fin:
+                print("CLOSE CONNECTION")
+                self.CONNECTED = False
+
+        
         
 '''
 This will be run if you run this script from the command line. You should not
