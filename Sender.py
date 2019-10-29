@@ -75,6 +75,14 @@ class Sender(BasicSender):
         """ store packet for retransmission """
         self.packets[self.seq] = {"packet": self.spacket, "time": time.time()}
 
+    def get_ack(self):
+        ack_str = self.split_packet(self.rpacket)[1]
+        if self.sackMode:
+            sack_info = ack_str.split(";")
+            self.acklist = sack_info[1]
+            return int(sack_info[0])
+        return int(ack_str)
+
     def connect(self):
         """ connect to receiver """
         self.spacket = self.make_packet('syn', self.INIT_SEQ, '')
@@ -104,6 +112,11 @@ class Sender(BasicSender):
         for i in range(start, self.seq):
             self.spacket = self.packets[i]["packet"]
             self.send(self.spacket)
+
+    def sack_retransmit(self):
+        for i in range(self.ack, self.seq):
+            if i not in self.acklist:
+                self.send(self.packets[i]["packet"])
     
     def handle_duplicates(self):
         if self.ack != self.ack_count[0]:
@@ -119,7 +132,8 @@ class Sender(BasicSender):
         try:    
             self.rpacket = self.receive(0)
             if self.validate(self.rpacket):
-                self.ack = int(self.split_packet(self.rpacket)[1])
+                self.ack = self.get_ack()
+                # self.ack = int(self.split_packet(self.rpacket)[1])
                 self.handle_duplicates()    # handle any fast retransmission triggers
 
                 if self.ack > self.window_start and self.ack < self.seq:    # delete ack'd packets from storage
@@ -133,7 +147,6 @@ class Sender(BasicSender):
     # Main sending loop.
     def start(self):
         """ main sending function """
-    
         self.connect()  # establish connection
         self.ack = int(self.split_packet(self.rpacket)[1])
         self.seq = self.ack
@@ -146,7 +159,10 @@ class Sender(BasicSender):
             tseq = self.timeouts()
             if tseq:
                 # retransmit files from tpacket to current packet
-                self.gbn_retransmit(tseq)
+                if not self.sackMode:
+                    self.gbn_retransmit(tseq)
+                else:
+                    self.sack_retransmit()
 
             # RECEIVE #
             self.receive_packet()
