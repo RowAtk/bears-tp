@@ -5,7 +5,7 @@ import subprocess
 import time
 
 import Checksum
-from tests import BasicTest, RandomDropTest, SackRandomDropTest, SeqnoAndTypeTest
+from tests import BasicTest, RandomDropTest, SackRandomDropTest, SeqnoAndTypeTest, FRTest
 
 """
 Add the tests you want to run here. Don't modify anything outside this function!
@@ -15,13 +15,13 @@ you want to run. The tests automatically register themselves with the
 forwarder, so they will magically be run.
 """
 def tests_to_run(forwarder):
-    BasicTest.BasicTest("BasicTest", forwarder, "README")
-    RandomDropTest.RandomDropTest("RandDropTest", forwarder, "README")
-    SackRandomDropTest.SackRandomDropTest("SackTest", forwarder, "README")
-    SeqnoAndTypeTest.SeqnoAndTypeTest("BinaryDrpDat", f, "b.png", seqnos = range(0,10000,2), types = ["dat"])
-    SeqnoAndTypeTest.SeqnoAndTypeTest("DropSyn", f, "b.png", seqnos = range(0,10000), types = ["syn"])
-    SeqnoAndTypeTest.SeqnoAndTypeTest("DropAtBeginning", f, "b.png", seqnos = range(0,10), types = ["syn", "dat"])
-
+    # BasicTest.BasicTest("BasicTest", forwarder, "README")
+    # RandomDropTest.RandomDropTest("RandDropTest", forwarder, "README")
+    # SackRandomDropTest.SackRandomDropTest("SackTest", forwarder, "README")
+    # SeqnoAndTypeTest.SeqnoAndTypeTest("BinaryDrpDat", f, "b.png", seqnos = range(0,10000,2), types = ["dat"])
+    # SeqnoAndTypeTest.SeqnoAndTypeTest("DropSyn", f, "b.png", seqnos = range(0,10000), types = ["syn"])
+    # SeqnoAndTypeTest.SeqnoAndTypeTest("DropAtBeginning", f, "b.png", seqnos = range(0,10), tFRTest, self).__init__(name,ypes = ["syn", "dat"])
+    FRTest.FRTest("Fast Retransmission Test", f, "testImage.jpg", [3,7,8, 1000, 1111])
 """
 Testing is divided into two pieces: this forwarder and a set of test cases in
 the tests directory.

@@ -17,16 +17,16 @@ This is a skeleton sender class. Create a fantastic transport protocol here.
 class Sender(BasicSender):
 
     # constants
-    TIMEOUT = 0.5
+    TIMEOUT = 5
     WINDOW_SIZE = 7
     INIT_SEQ = 0
-    CONNECTED = False
     PACKET_SIZE = 1450
 
     def __init__(self, dest, port, filename, debug=False, sackMode=False):
         super(Sender, self).__init__(dest, port, filename, debug)
         self.sackMode = sackMode
         self.debug = debug
+        self.CONNECTED = False      # determines when connection should be broken 
         self.data = [None, self.infile.read(self.PACKET_SIZE)]  # current data and lookahead data
         self.seq = self.INIT_SEQ    # sequence number of next packet to be sent
         self.ack = None             # ack number of most recently acknowledged packet
@@ -37,6 +37,7 @@ class Sender(BasicSender):
         self.ack_count = [None, 0]  # counter for duplicate ack numbers received
 
     def getData(self):
+        """ get next set of data to be placed in packet """
         self.data[0] = self.data[1]
         self.data[1] = self.infile.read(self.PACKET_SIZE)
         if self.data[1]:
@@ -44,6 +45,7 @@ class Sender(BasicSender):
         return 'fin', self.data[0]
 
     def see_packet(self, packet, mode='s'):
+        """ see packet with only preview of data """
         msg_type, seqno, data, checksum = self.split_packet(packet)
         try:
             seqno = int(seqno)
@@ -55,15 +57,18 @@ class Sender(BasicSender):
             print "packet: %s|%d|%s|%s" % (msg_type, seqno, data, checksum)
 
     def stored_packets(self):
+        """ get all stored packets """
         print "\nPACKET STORE"
         for packet in self.packets.values():
             self.see_packet(packet["packet"])
         print "\n"
 
     def validate(self, packet):
+        """ validate checksum of received packet """
         return Checksum.validate_checksum(packet)        
 
     def timeouts(self):
+        """ checks if any of unack'd packets have timed out """
         now = time.time()
         for seq, packet in self.packets.items():
             if now - packet["time"] > self.TIMEOUT:
@@ -76,6 +81,7 @@ class Sender(BasicSender):
         self.packets[self.seq] = {"packet": self.spacket, "time": time.time()}
 
     def get_ack(self):
+        """ get ack from rpacket and list of ack'd packets if in sack mode """
         ack_str = self.split_packet(self.rpacket)[1]
         if self.sackMode:
             sack_info = ack_str.split(";")
@@ -89,7 +95,7 @@ class Sender(BasicSender):
         self.spacket = self.make_packet('syn', self.INIT_SEQ, '')
         while not self.CONNECTED:
             self.send(self.spacket)
-            self.rpacket = self.receive(self.TIMEOUT)
+            self.rpacket = self.receive(0.05)
             if self.rpacket:
                 print self.rpacket
                 if self.validate(self.rpacket):
@@ -127,6 +133,7 @@ class Sender(BasicSender):
             self.ack_count[1] += 1
             if self.ack_count[1] >= 4:
                 print("FAST RETRANSMISSION")
+                time.sleep(5)
                 if self.sackMode:
                     self.sack_retransmit()
                 else:
@@ -146,8 +153,7 @@ class Sender(BasicSender):
                         self.window_start += 1
         except:
             self.rpacket = None
-
-        
+ 
     # Main sending loop.
     def start(self):
         """ main sending function """
@@ -176,8 +182,7 @@ class Sender(BasicSender):
                 print("CLOSE CONNECTION")
                 self.CONNECTED = False
 
-        
-        
+             
 '''
 This will be run if you run this script from the command line. You should not
 change any of this; the grader may rely on the behavior here to test your
